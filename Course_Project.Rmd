@@ -1,0 +1,64 @@
+---
+title: "Random Forest Predictive Model for Exercise Quality from Wearable Technology Telemetry"
+subtitle: "Course project for Coursera Data Science Practical Machine Learning Course"
+author: "Joshua Huber"
+date: "May 7, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+set.seed(12345)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+### Data Processing:
+We download the data files from the source site if not already downloaded.
+```{r}
+if(!file.exists("pml-training.csv")){
+    download.file(  "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+                  , "pml-training.csv")
+}
+if(!file.exists("pml-testing.csv")){
+    download.file(  "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+                  , "pml-testing.csv")
+}
+```
+Next we read the delimited data into a data frames.
+```{r}
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+```
+I'm assuming the test set will not all be of the same classification (which would be a boring set).  To classify these differences, we will only take interest in the variables that have more than one level in the testing set.
+```{r}
+importantNames <- names(testing[,apply(testing, 2, function(x)length(unique(x))) > 1])
+importantNames
+```
+### Predictor selection
+From the above 60 potential predictors, we have a few to toss out.  First, we don't care about the variable called "X", as this is just a counter of the observations and would potentially give a false correlation. We also deliberately eliminated the "user_name" variable.  Time/date variables have also been thrown out.  Our remaining list of 52 predictors is the following, and we use them to subset the training set into a data frame containing only the chosen predictors 
+```{r}
+predictors <- subset(training, select=c( roll_belt,pitch_belt,yaw_belt,total_accel_belt,gyros_belt_x,gyros_belt_y,gyros_belt_z,accel_belt_x,accel_belt_y,accel_belt_z,magnet_belt_x,magnet_belt_y,magnet_belt_z,roll_arm,pitch_arm,yaw_arm,total_accel_arm,gyros_arm_x,gyros_arm_y,gyros_arm_z,accel_arm_x,accel_arm_y,accel_arm_z,magnet_arm_x,magnet_arm_y,magnet_arm_z,roll_dumbbell,pitch_dumbbell,yaw_dumbbell,total_accel_dumbbell,gyros_dumbbell_x,gyros_dumbbell_y,gyros_dumbbell_z,accel_dumbbell_x,accel_dumbbell_y,accel_dumbbell_z,magnet_dumbbell_x,magnet_dumbbell_y,magnet_dumbbell_z,roll_forearm,pitch_forearm,yaw_forearm,total_accel_forearm,gyros_forearm_x,gyros_forearm_y,gyros_forearm_z,accel_forearm_x,accel_forearm_y,accel_forearm_z,magnet_forearm_x,magnet_forearm_y,magnet_forearm_z))
+```
+### Cross validation training configuraiton
+We configure our training parameters to do an 8-way K-fold training set cross validation.
+```{r}
+require(caret)
+TrainingParameters <- trainControl(method = "cv", number = 8)
+```
+### Model Fitting
+Now we employ a Random Forest model to fit the training data.  This takes a long time when running in default, single threaded manner.  Increasing parallelism speeds up the training, but at a big memory cost. 
+```{r}
+library(doMC)
+registerDoMC(cores = detectCores() - 1)
+fit <- train(x=predictors, y=training$classe, method="rf", trControl= TrainingParameters)
+```
+### Assessment
+Next we checking the accuracy of the cross validated model. We are better than 99% accuracy (in-sample), so we are quite confident that we will be able to make at least 80% correct classifications on the test (quiz) data set.
+```{r}
+max(fit$results$Accuracy)
+```
+### Prediction
+At last, we make the prediction on the testing set.  
+```{r}
+data.frame(testing$problem_id, predict.train(fit, testing))
+```
